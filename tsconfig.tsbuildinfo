@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/data.ts","./src/main.tsx","./src/neuron.ts","./src/components/decisionplot.tsx","./src/components/neurondiagram.tsx","./src/hooks/useanimation.ts","./vite.config.ts"],"version":"5.9.3"}
