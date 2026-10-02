@@ -754,3 +754,33 @@ legend {
   fill: transparent;
   cursor: crosshair;
 }
+
+/* ---------- Speed control ---------- */
+
+.speed {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.speed .btn {
+  border: 0;
+  border-radius: 0;
+  width: 34px;
+  padding: 7px 0;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.speed-value {
+  min-width: 48px;
+  text-align: center;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  padding: 7px 0;
+}

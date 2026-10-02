@@ -18,6 +18,8 @@ import { prefersReducedMotion, useTween } from './hooks/useAnimation';
 const FORWARD_MS = 900;
 const UPDATE_MS = 700;
 const AUTO_PAUSE_MS = 250;
+const SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
+const DEFAULT_SPEED_INDEX = 2;
 const MAX_HISTORY = 500;
 
 type LastResult = StepResult & { iteration: number; pointId: number; trained: boolean };
@@ -68,6 +70,7 @@ export default function App() {
   const [inputs, setInputs] = useState({ x1: 0.3, x2: -0.4 });
   const [learn, setLearn] = useState(true);
   const [auto, setAuto] = useState(false);
+  const [speedIndex, setSpeedIndex] = useState(DEFAULT_SPEED_INDEX);
 
   const [cursor, setCursor] = useState(0);
   const [iteration, setIteration] = useState(0);
@@ -79,8 +82,10 @@ export default function App() {
   weightsRef.current = weights;
   const timer = useRef<number>();
 
-  const tweenedWeights = useTween(weights, UPDATE_MS);
-  const forwardMs = prefersReducedMotion() ? 0 : FORWARD_MS;
+  const speed = SPEEDS[speedIndex];
+  const updateMs = UPDATE_MS / speed;
+  const tweenedWeights = useTween(weights, updateMs);
+  const forwardMs = prefersReducedMotion() ? 0 : FORWARD_MS / speed;
   const acc = accuracy(points, weights);
   const loss = meanSquaredError(points, weights, activation);
   const busy = run !== null;
@@ -116,9 +121,9 @@ export default function App() {
   // Auto-train: keep pressing "Predict" after each boundary animation settles.
   useEffect(() => {
     if (!auto || busy) return;
-    const t = window.setTimeout(predict, last ? UPDATE_MS + AUTO_PAUSE_MS : 0);
+    const t = window.setTimeout(predict, last ? (UPDATE_MS + AUTO_PAUSE_MS) / speed : 0);
     return () => window.clearTimeout(t);
-  }, [auto, busy, predict, last]);
+  }, [auto, busy, predict, last, speed]);
 
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
@@ -260,6 +265,29 @@ export default function App() {
             <button className={`btn ${auto ? 'active' : ''}`} onClick={() => setAuto((a) => !a)} aria-pressed={auto}>
               {auto ? '❚❚ Pause' : '▶ Auto'}
             </button>
+            <div className="speed" role="group" aria-label="Iteration speed">
+              <button
+                className="btn"
+                onClick={() => setSpeedIndex((i) => Math.max(0, i - 1))}
+                disabled={speedIndex === 0}
+                aria-label="Slower"
+                title="Slower"
+              >
+                −
+              </button>
+              <span className="speed-value" aria-live="polite">
+                {speed}×
+              </span>
+              <button
+                className="btn"
+                onClick={() => setSpeedIndex((i) => Math.min(SPEEDS.length - 1, i + 1))}
+                disabled={speedIndex === SPEEDS.length - 1}
+                aria-label="Faster"
+                title="Faster"
+              >
+                +
+              </button>
+            </div>
             <select value={datasetKey} onChange={(e) => changeDataset(e.target.value as DatasetKey)} aria-label="Dataset">
               {(Object.keys(DATASETS) as DatasetKey[]).map((k) => (
                 <option key={k} value={k}>
