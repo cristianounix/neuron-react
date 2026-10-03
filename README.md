@@ -2,7 +2,6 @@
 
 This is a react application to show how a artificial neuron work.
 
-
 We have:
 - Input signals 
 - Weights 
@@ -10,16 +9,11 @@ We have:
 - Activation function 
 - Output signal 
 
-
 We have a graph in the right side to show how data area distributed.
 In the left side we have the neuron structure with the inputs.
 
-
-
 Add a button "predict" to interate.
-
 Add animation in the plot when predict.
-
 
 ## Running locally
 
