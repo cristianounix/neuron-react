@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { NeuronDiagram } from './components/NeuronDiagram';
 import { DecisionPlot } from './components/DecisionPlot';
+import { ErrorChart, type ErrorSample } from './components/ErrorChart';
 import { DATASETS, generateDataset, mulberry32, type DatasetKey } from './data';
 import {
   ACTIVATIONS,
   WEIGHT_LIMIT,
   accuracy,
+  meanSquaredError,
   trainStep,
   type ActivationKey,
   type StepResult,
@@ -16,6 +18,9 @@ import { prefersReducedMotion, useTween } from './hooks/useAnimation';
 const FORWARD_MS = 900;
 const UPDATE_MS = 700;
 const AUTO_PAUSE_MS = 250;
+const SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
+const DEFAULT_SPEED_INDEX = 2;
+const MAX_HISTORY = 500;
 
 type LastResult = StepResult & { iteration: number; pointId: number; trained: boolean };
 
@@ -65,19 +70,24 @@ export default function App() {
   const [inputs, setInputs] = useState({ x1: 0.3, x2: -0.4 });
   const [learn, setLearn] = useState(true);
   const [auto, setAuto] = useState(false);
+  const [speedIndex, setSpeedIndex] = useState(DEFAULT_SPEED_INDEX);
 
   const [cursor, setCursor] = useState(0);
   const [iteration, setIteration] = useState(0);
   const [run, setRun] = useState<{ id: number; pointId: number } | null>(null);
   const [last, setLast] = useState<LastResult | null>(null);
+  const [errorHistory, setErrorHistory] = useState<ErrorSample[]>([]);
 
   const weightsRef = useRef(weights);
   weightsRef.current = weights;
   const timer = useRef<number>();
 
-  const tweenedWeights = useTween(weights, UPDATE_MS);
-  const forwardMs = prefersReducedMotion() ? 0 : FORWARD_MS;
+  const speed = SPEEDS[speedIndex];
+  const updateMs = UPDATE_MS / speed;
+  const tweenedWeights = useTween(weights, updateMs);
+  const forwardMs = prefersReducedMotion() ? 0 : FORWARD_MS / speed;
   const acc = accuracy(points, weights);
+  const loss = meanSquaredError(points, weights, activation);
   const busy = run !== null;
 
   const predict = useCallback(() => {
@@ -92,7 +102,16 @@ export default function App() {
     timer.current = window.setTimeout(() => {
       const step = trainStep(weightsRef.current, activation, point, learningRate);
       setLast({ ...step, iteration: id, pointId: point.id, trained: learn });
-      if (learn) setWeights(step.next);
+      const before = weightsRef.current;
+      const after = learn ? step.next : before;
+      if (learn) setWeights(after);
+      const sample: ErrorSample = { iteration: id, loss: meanSquaredError(points, after, activation), correct: step.correct };
+      setErrorHistory((h) =>
+        (h.length
+          ? [...h, sample]
+          : [{ iteration: id - 1, loss: meanSquaredError(points, before, activation), correct: null }, sample]
+        ).slice(-MAX_HISTORY),
+      );
       setIteration(id);
       setCursor((c) => c + 1);
       setRun(null);
@@ -102,9 +121,9 @@ export default function App() {
   // Auto-train: keep pressing "Predict" after each boundary animation settles.
   useEffect(() => {
     if (!auto || busy) return;
-    const t = window.setTimeout(predict, last ? UPDATE_MS + AUTO_PAUSE_MS : 0);
+    const t = window.setTimeout(predict, last ? (UPDATE_MS + AUTO_PAUSE_MS) / speed : 0);
     return () => window.clearTimeout(t);
-  }, [auto, busy, predict, last]);
+  }, [auto, busy, predict, last, speed]);
 
   useEffect(() => () => window.clearTimeout(timer.current), []);
 
@@ -118,6 +137,7 @@ export default function App() {
     setCursor(0);
     setIteration(0);
     setLast(null);
+    setErrorHistory([]);
   };
 
   const changeDataset = (key: DatasetKey) => {
@@ -158,63 +178,79 @@ export default function App() {
       </header>
 
       <main className="layout">
-        {/* Left: neuron structure */}
-        <section className="card">
-          <div className="card-header">
-            <h2>Neuron</h2>
-            <code className="formula">y = f(w₁·x₁ + w₂·x₂ + b)</code>
-          </div>
+        {/* Left: neuron structure + error over time */}
+        <div className="column">
+          <section className="card">
+            <div className="card-header">
+              <h2>Neuron</h2>
+              <code className="formula">y = f(w₁·x₁ + w₂·x₂ + b)</code>
+            </div>
 
-          <NeuronDiagram
-            inputs={inputs}
-            weights={weights}
-            activation={activation}
-            runId={run?.id ?? null}
-            forwardMs={forwardMs}
-          />
+            <NeuronDiagram
+              inputs={inputs}
+              weights={weights}
+              activation={activation}
+              runId={run?.id ?? null}
+              forwardMs={forwardMs}
+            />
 
-          <div className="controls">
-            <fieldset>
-              <legend>Input signals</legend>
-              <Slider label="x₁" value={inputs.x1} min={-1} max={1} step={0.01} disabled={busy} onChange={(v) => setInputs((i) => ({ ...i, x1: v }))} />
-              <Slider label="x₂" value={inputs.x2} min={-1} max={1} step={0.01} disabled={busy} onChange={(v) => setInputs((i) => ({ ...i, x2: v }))} />
-            </fieldset>
+            <div className="controls">
+              <fieldset>
+                <legend>Input signals</legend>
+                <Slider label="x₁" value={inputs.x1} min={-1} max={1} step={0.01} disabled={busy} onChange={(v) => setInputs((i) => ({ ...i, x1: v }))} />
+                <Slider label="x₂" value={inputs.x2} min={-1} max={1} step={0.01} disabled={busy} onChange={(v) => setInputs((i) => ({ ...i, x2: v }))} />
+              </fieldset>
 
-            <fieldset>
-              <legend>Weights &amp; bias</legend>
-              <Slider label="w₁" value={weights.w1} min={-WEIGHT_LIMIT} max={WEIGHT_LIMIT} step={0.01} onChange={setWeight('w1')} />
-              <Slider label="w₂" value={weights.w2} min={-WEIGHT_LIMIT} max={WEIGHT_LIMIT} step={0.01} onChange={setWeight('w2')} />
-              <Slider label="b" value={weights.b} min={-WEIGHT_LIMIT} max={WEIGHT_LIMIT} step={0.01} onChange={setWeight('b')} />
-            </fieldset>
+              <fieldset>
+                <legend>Weights &amp; bias</legend>
+                <Slider label="w₁" value={weights.w1} min={-WEIGHT_LIMIT} max={WEIGHT_LIMIT} step={0.01} onChange={setWeight('w1')} />
+                <Slider label="w₂" value={weights.w2} min={-WEIGHT_LIMIT} max={WEIGHT_LIMIT} step={0.01} onChange={setWeight('w2')} />
+                <Slider label="b" value={weights.b} min={-WEIGHT_LIMIT} max={WEIGHT_LIMIT} step={0.01} onChange={setWeight('b')} />
+              </fieldset>
 
-            <fieldset>
-              <legend>Activation function</legend>
-              <div className="segmented" role="radiogroup" aria-label="Activation function">
-                {(Object.keys(ACTIVATIONS) as ActivationKey[]).map((k) => (
-                  <button
-                    key={k}
-                    role="radio"
-                    aria-checked={activation === k}
-                    className={activation === k ? 'active' : ''}
-                    onClick={() => setActivation(k)}
-                  >
-                    {ACTIVATIONS[k].label}
-                  </button>
-                ))}
-              </div>
-              <p className="hint">{ACTIVATIONS[activation].formula}</p>
-            </fieldset>
+              <fieldset>
+                <legend>Activation function</legend>
+                <div className="segmented" role="radiogroup" aria-label="Activation function">
+                  {(Object.keys(ACTIVATIONS) as ActivationKey[]).map((k) => (
+                    <button
+                      key={k}
+                      role="radio"
+                      aria-checked={activation === k}
+                      className={activation === k ? 'active' : ''}
+                      onClick={() => {
+                        setActivation(k);
+                        setErrorHistory([]); // the loss scale differs per activation
+                      }}
+                    >
+                      {ACTIVATIONS[k].label}
+                    </button>
+                  ))}
+                </div>
+                <p className="hint">{ACTIVATIONS[activation].formula}</p>
+              </fieldset>
 
-            <fieldset>
-              <legend>Learning</legend>
-              <Slider label="η" value={learningRate} min={0.01} max={1} step={0.01} onChange={setLearningRate} />
-              <label className="checkbox">
-                <input type="checkbox" checked={learn} onChange={(e) => setLearn(e.target.checked)} />
-                Update weights after each prediction
-              </label>
-            </fieldset>
-          </div>
-        </section>
+              <fieldset>
+                <legend>Learning</legend>
+                <Slider label="η" value={learningRate} min={0.01} max={1} step={0.01} onChange={setLearningRate} />
+                <label className="checkbox">
+                  <input type="checkbox" checked={learn} onChange={(e) => setLearn(e.target.checked)} />
+                  Update weights after each prediction
+                </label>
+              </fieldset>
+            </div>
+          </section>
+
+          <section className="card">
+            <div className="card-header">
+              <h2>Error</h2>
+              <span className="formula">
+                current MSE <strong>{loss.toFixed(3)}</strong>
+              </span>
+            </div>
+            <ErrorChart history={errorHistory} />
+            <p className="hint">Mean squared error over all samples after each iteration — lower is better.</p>
+          </section>
+        </div>
 
         {/* Right: data + decision boundary */}
         <section className="card">
@@ -229,6 +265,29 @@ export default function App() {
             <button className={`btn ${auto ? 'active' : ''}`} onClick={() => setAuto((a) => !a)} aria-pressed={auto}>
               {auto ? '❚❚ Pause' : '▶ Auto'}
             </button>
+            <div className="speed" role="group" aria-label="Iteration speed">
+              <button
+                className="btn"
+                onClick={() => setSpeedIndex((i) => Math.max(0, i - 1))}
+                disabled={speedIndex === 0}
+                aria-label="Slower"
+                title="Slower"
+              >
+                −
+              </button>
+              <span className="speed-value" aria-live="polite">
+                {speed}×
+              </span>
+              <button
+                className="btn"
+                onClick={() => setSpeedIndex((i) => Math.min(SPEEDS.length - 1, i + 1))}
+                disabled={speedIndex === SPEEDS.length - 1}
+                aria-label="Faster"
+                title="Faster"
+              >
+                +
+              </button>
+            </div>
             <select value={datasetKey} onChange={(e) => changeDataset(e.target.value as DatasetKey)} aria-label="Dataset">
               {(Object.keys(DATASETS) as DatasetKey[]).map((k) => (
                 <option key={k} value={k}>

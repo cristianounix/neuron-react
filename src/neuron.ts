@@ -96,6 +96,14 @@ export function accuracy(points: Point[], w: Weights) {
   return hits / points.length;
 }
 
+/** Mean squared error between the neuron output and each sample's target. */
+export function meanSquaredError(points: Point[], w: Weights, act: ActivationKey) {
+  if (points.length === 0) return 0;
+  const { fn, target } = ACTIVATIONS[act];
+  const total = points.reduce((sum, p) => sum + (target(p.label) - fn(weightedSum(w, p.x1, p.x2))) ** 2, 0);
+  return total / points.length;
+}
+
 /** The line w1·x1 + w2·x2 + b = 0 clipped to the [-1, 1] square. */
 export function boundarySegment(w: Weights): [[number, number], [number, number]] | null {
   const pts: [number, number][] = [];
