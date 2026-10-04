@@ -37,9 +37,9 @@ jobs:
       
       # Step 2: Set up a runtime environment (e.g., Node.js)
       - name: Set up Node.js
-      - uses: actions/setup-node@v7
+        uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: '24'
 
       - name: Install dependencies and run tests
         run: |
