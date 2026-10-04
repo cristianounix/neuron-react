@@ -42,6 +42,7 @@ jobs:
 
       - name: Install dependencies and run tests
         run: |
+          npm install
           npm run build
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
